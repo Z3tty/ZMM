@@ -9,7 +9,8 @@ LOOKUP: dict = {
     "$" : "free",
     "@" : "malloc",
     "deref": "*",
-    "ref" : "&"
+    "ref" : "&",
+    "fn" : "",
 }
 BOILERPLATE: str = """
 // [--------------------------------- START OF BOILERPLATE ---------------------------------]
@@ -35,10 +36,10 @@ typedef uint bool;
 #define true !false
 #define null NULL
 bool toBoolean(T val) {
-    if ((int)val == 0) {
-        return false;
+    if (val) {
+        return true;
     }
-    return true;
+    return false;
 }
 
 // [--------------------------------- END OF BOILERPLATE ---------------------------------]
@@ -81,6 +82,17 @@ def convert_import(path: str) -> str:
     file_content += "\n// --------------------------------- [END OF {}] ---------------------------------\n".format(path)
     return file_content
 
+def repl_funcsig(key: str, line: str) -> str:
+    # Replace the function signature
+    # fn NAME(ARGS)type ->
+    closeparen_idx: int = line.index(")") + 1
+    funcstart_idx: int = line.index("{")
+    typesig: str = line[closeparen_idx:funcstart_idx]
+    #print(f"type: {typesig}")
+    line = line[0:closeparen_idx] + line[funcstart_idx:-1]
+    line = line.replace(key, typesig)
+    return line
+
 def smart_repl_keyword(line: str) -> str:
     # Replaces keywords with their c equivalents
     # Ensures that the keyword is not part of a larger word
@@ -89,12 +101,19 @@ def smart_repl_keyword(line: str) -> str:
         i = 0
         while i < 20: # Inefficient as absolute fuck but here we go, hacking it
             if key in line:
+                if key == "fn":
+                    if ("{" in line and ")" in line):
+                        if (line[line.index(key) - 1]) not in ALPHANUM and (line[line.index(key) + len(key)]) not in ALPHANUM:
+                            # Function found
+                            line = repl_funcsig(key, line)
+                            break
                 if key == "::": # Always simply replace this since it never naturally occurs
                     line = line.replace(key, LOOKUP[key])
                     continue
                 if key == "@" or key == "$": # Special chars need to be replaced differently
                     line = repl_special(line, key)
                     continue
+
                 # Key indices
                 key_startIndex = line.index(key)
                 key_endIndex = key_startIndex + len(key)
@@ -106,6 +125,11 @@ def smart_repl_keyword(line: str) -> str:
                         line = line.replace(key, LOOKUP[key], 1)
             i += 1
     return line
+
+def repl_arrow(line: str) -> str:
+    # The arrow function has been completely redefined and must be replaced first to avoid
+    # clashing with the new struct access token ::
+    return line.replace("->", "{");
 
 def convert_line(line: str) -> str:
     # Converts a single line of code to c source
@@ -128,13 +152,16 @@ def convert_line(line: str) -> str:
             if line[i] == "\"":
                 for j in range(len(line)):
                     if line[j] == "\"" and j != i:
-                        before: str = smart_repl_keyword(line[0:i])
-                        after: str = smart_repl_keyword(line[j+1:-1])
+                        before: str = repl_arrow(line[0:i])
+                        before = smart_repl_keyword(before)
+                        after: str = repl_arrow(line[j+1:-1])
+                        after = smart_repl_keyword(after)
                         string: str = line[i:j+1]
                         towrite = before + string + after + "\n"
                         break
                 break
     else:
+        towrite = repl_arrow(towrite)
         towrite = smart_repl_keyword(towrite)
     return towrite
 
@@ -186,14 +213,17 @@ def lazy_convert(infile: str, outexec: str, flags: str) -> None:
 
 import sys
 if __name__ == "__main__":
+    if (len(sys.argv) < 2):
+        print("use zc --help for help on how to utilize the compiler")
+        sys.exit()
     if (sys.argv[1] in ["--help", "-h"]):
         print("usage: zc [SOURCE.zs] [EXEC NAME]")
         print("flags:")
         print("--p: preserve source")
-        exit()
+        sys.exit()
     if (len(sys.argv) < 3):
         print("usage: zc [SOURCE] [DEST]")
-        exit()
+        sys.exit()
     infile: str = sys.argv[1]
     if ".zs" not in infile:
         infile = infile + ".zs"
