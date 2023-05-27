@@ -140,6 +140,8 @@ def convert_line(line: str) -> str:
         # IF we are importing a file, we need to convert it to c source
         # and insert it at the start of the file
         # grabs the path and converts it to c source
+        # Be VERY warned that this will cause name collisions
+        # (Though on second thought, all imports invariably do, since your importing the symbols TO use them)
         path_start: int = line.index("<")
         path_end: int = line.index(">", path_start)
         return convert_import(line[path_start+1:path_end])
